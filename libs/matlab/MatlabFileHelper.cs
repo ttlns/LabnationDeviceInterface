@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
-using Ionic.Zlib;
+using System.IO.Compression;
 using System.Reflection;
 
 namespace MatlabFileIO
@@ -77,7 +77,7 @@ namespace MatlabFileIO
             typeof(Int64),  //12
             typeof(UInt64), //13
             typeof(Array),  //14 MiMatrix
-            typeof(ZlibStream), //15 Compressed Zlib data
+            typeof(DeflateStream), //15 Compressed Zlib data
             null,           //16 UTF-8  - not supported
             null,           //17 UTF-16 - not supported
             null            //18 UTF-32 - not supported

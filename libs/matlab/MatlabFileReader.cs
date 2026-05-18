@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
-using Ionic.Zlib;
+using System.IO.Compression;
 
 namespace MatlabFileIO
 {
@@ -38,14 +38,26 @@ namespace MatlabFileIO
                 else if (t.dataType.Equals(typeof(Array))) //We use Array to indicate MiMatrix
                 {
                     ReadMatrix(ref v, t.length, readStream);
-                } else if (t.dataType.Equals(typeof(ZlibStream)))
+                } else if (t.dataType.Equals(typeof(DeflateStream)))
                 {
                     byte[] compressed = readStream.ReadBytes((int)t.length);
-                    byte[] decompressed = ZlibStream.UncompressBuffer(compressed);
-                    MemoryStream m = new MemoryStream(decompressed);
-                    BinaryReader br = new BinaryReader(m);
-                    Tag ct = MatfileHelper.ReadTag(br);
-                    ReadMatrix(ref v, ct.length, br);
+                    
+                    // MATLAB .mat files wrap raw DEFLATE data with a 2-byte ZLIB header 
+                    // (usually 0x78 0x9C) and a 4-byte checksum trailing footer. 
+                    // Standard DeflateStream will crash if it reads these. We strip them out:
+                    using (MemoryStream msCompressed = new MemoryStream(compressed, 2, compressed.Length - 6))
+                    using (DeflateStream deflateStream = new DeflateStream(msCompressed, CompressionMode.Decompress))
+                    using (MemoryStream msDecompressed = new MemoryStream())
+                    {
+                        deflateStream.CopyTo(msDecompressed);
+                        msDecompressed.Position = 0;
+                        
+                        using (BinaryReader br = new BinaryReader(msDecompressed))
+                        {
+                            Tag ct = MatfileHelper.ReadTag(br);
+                            ReadMatrix(ref v, ct.length, br);
+                        }
+                    }
                 }
                 else
                     throw new Exception("Not an array, don't know what to do with this stuff");

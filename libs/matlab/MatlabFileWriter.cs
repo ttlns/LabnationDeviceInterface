@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
-using Ionic.Zlib;
+using System.IO.Compression;
 
 namespace MatlabFileIO
 {
@@ -34,12 +34,51 @@ namespace MatlabFileIO
             if(uncompressedStream == null)
                 return;
 
-            fileWriter.Write(MatfileHelper.MatlabDataTypeNumber(typeof(ZlibStream)));
-            byte[] compressedBuffer = ZlibStream.CompressBuffer(uncompressedStream.ToArray());
+            // Use DeflateStream type matching our update in MatfileHelper
+            fileWriter.Write(MatfileHelper.MatlabDataTypeNumber(typeof(DeflateStream)));
+            
+            byte[] rawBytes = uncompressedStream.ToArray();
+            byte[] compressedBuffer;
+
+            using (MemoryStream msCompressed = new MemoryStream())
+            {
+                // 1. Write the standard ZLIB Header bytes (Default compression level marker)
+                msCompressed.WriteByte(0x78);
+                msCompressed.WriteByte(0x9C);
+
+                // 2. Compress the actual payload using standard Deflate
+                using (DeflateStream deflateStream = new DeflateStream(msCompressed, CompressionMode.Compress, true))
+                {
+                    deflateStream.Write(rawBytes, 0, rawBytes.Length);
+                }
+
+                // 3. Calculate and append the Adler-32 Checksum footer required by ZLIB spec
+                uint adler = CalculateAdler32(rawBytes);
+                msCompressed.WriteByte((byte)((adler >> 24) & 0xFF));
+                msCompressed.WriteByte((byte)((adler >> 16) & 0xFF));
+                msCompressed.WriteByte((byte)((adler >> 8) & 0xFF));
+                msCompressed.WriteByte((byte)(adler & 0xFF));
+
+                compressedBuffer = msCompressed.ToArray();
+            }
+
             fileWriter.Write((UInt32)compressedBuffer.Length);
             fileWriter.Write(compressedBuffer);
 
             uncompressedStream = null;
+        }
+
+        // Helper method to compute Adler-32 checksum manually without external libraries
+        private static uint CalculateAdler32(byte[] data)
+        {
+            uint s1 = 1;
+            uint s2 = 0;
+            for (int i = 0; i < data.Length; i++)
+            {
+                s1 = (s1 + data[i]) % 65521;
+                s2 = (s2 + s1) % 65521;
+            }
+            return (s2 << 16) | s1;
         }
 
         public MatLabFileArrayWriter OpenArray(Type t, string varName, bool compress)
